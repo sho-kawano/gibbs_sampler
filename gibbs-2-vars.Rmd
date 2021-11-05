@@ -1,0 +1,302 @@
+---
+title: "Gibbs Sampler with two variables"
+author: "Sho"
+date: "10/1/2021"
+output: html_notebook
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+set.seed(999)
+```
+
+
+### Normal-Gamma Family of Distributions
+
+Let $\mu \in \mathbb{R}$ and $\tau >0$ be random variables. 
+
+Suppose that :
+
+* $\mu$ given $\tau$ is $\mu | \tau \sim N(\mu_0, \hspace{1mm} [\lambda_0 \tau]^{-1})$  (has the $\xi_1$ pdf).  
+* $\tau \sim Gamma(\alpha_0, \beta_0)$ (has the $\xi_2$ pdf).  
+
+Then we say that the joint distribution of $\mu$ and $\tau$ is the normal-gamma distribution with hyperparameters $\mu_0, \lambda_0, \alpha_0, \beta_0$.
+
+The join posterior pdf of $\mu$ and $\tau$ satisfies the relation: 
+
+$$\begin{align*} \xi(\mu, \tau | \vec{x}) &\propto f_{\vec{X}}(\vec{x} | \mu, \tau) \xi_1(\mu | \tau) \xi_2(\tau)   \\
+& \propto \tau^{\alpha_1+1/2-1} exp(- \tau [\frac{1}{2} \lambda_1 (\mu - \mu_1)^2 + \beta_1]) \end{align*}$$
+
+where $\alpha_1$, $\beta_1$, $\mu_1$, and $\lambda_1$ are known values once the data have been observed.  
+
+Considering this as a function of $\mu$ for fixed $\tau$, it looks like the p.d.f. of a $Normal(\mu_1, \hspace{1mm} [\lambda_1 \tau]^{-1})$ distribution. 
+
+Considering this as a function of $\tau$ for fixed $\mu$, it looks like the p.d.f. of a $Gamma(\alpha_1 + 1/2, \hspace{1mm} \lambda_1(\mu - \mu_1)^2/2 + \beta_1 )$. 
+
+That said, there is a closed form for the posterior. 
+
+### Model Fitting for Lactic Acid Data
+Moore and McCabe (1999) describe an experiment conducted  in Australia to study the relationship between taste and the chemical
+composition of cheese. One chemical whose concentration can affect taste is lactic acid. Cheese manufacturers who want to establish a loyal customer base would like the taste to be about the same each time a customer purchases the cheese. The variation in concentrations of chemicals like lactic acid can lead to variation in the taste of cheese. The data of the lactic acid concentrations are given below. 
+
+
+```{r}
+data = c(0.86, 1.53, 1.57, 1.81, 0.99, 1.09, 1.29, 1.78, 1.29, 1.58, 
+                1.68, 1.9, 1.06, 1.3, 1.52, 1.74, 1.16, 1.49, 1.63, 1.99, 
+                1.15, 1.33, 1.44, 2.01, 1.31, 1.46, 1.72, 1.25, 1.08, 1.25
+                )
+length(data)
+```
+
+Suppose that the concentrations are independent normal random variables with mean $\mu$ and precision $\tau$. Suppose that the prior joint distribution of $\mu$ and $\tau$ is a normal-gamma distribution with hyperparameters $\mu_0 = 1$, $\lambda_0 = 1$, $\alpha_0 = 0.5$, and $\beta_0 = 0.5$. 
+
+Here are the prior hyperparameters: 
+
+```{r}
+mu_0 = 1
+lambda_0 = 1
+alpha_0 = 0.5
+beta_0 = 0.5
+```
+
+
+Note that the posterior hyperparameters are: 
+$$\mu_1 = \frac{\lambda_0 \mu_0 + n \bar{x}_n}{\lambda_0 +n}  \text{ , }   \hspace{2mm} \lambda_1 = \lambda_0 +n  \text{ , }\\    \hspace{2mm} \alpha_1 = \alpha_0 + \frac{n}{2}   \hspace{2mm}  \text{ and }   \hspace{2mm} \beta_1 = \beta_0 + \frac{s^2_n}{2} + \frac{n \lambda_0 (\bar{x}_n - \mu_0)^2}{2 (\lambda_0 + n)}$$
+
+
+```{r}
+n = length(data)
+x_bar = mean(data)
+s2 = sum((data - x_bar)^2)
+```
+
+We have $n=$ `r n`, $\bar{x}_n=$ `r x_bar`, and $s^2_n=$ `r s2`.  
+Here we calculate the posterior hyperparameters.
+
+```{r}
+mu_1 = (lambda_0*mu_0 + n*x_bar)/(lambda_0 + n)
+lambda_1 = lambda_0 + n 
+alpha_1 = alpha_0 + (n/2)
+beta_1 = beta_0 + (s2/2) + (n * lambda_0 *(x_bar - mu_0)^2)/(2 *(lambda_0 + n))
+
+c(alpha_1, lambda_1, mu_1, beta_1) %>% round(2)
+```
+
+
+
+### Gibbs Sampling! 
+
+Now we can finally use the Gibbs Sampling Algorithm:
+
+1. Pick a starting value $\tau^{(0)}$ for $\tau$, and set $i = 0$.
+2. Simulate a new value $\mu^{(i+1)}$ from the conditional distribution of $\mu$ given $\tau$: $$Normal(\mu_1, \hspace{1mm} [\lambda_1 \tau^{(i)}]^{-1})$$.
+3. Simulate a new value $\tau$ from the conditional distribution of $\tau$ given $\mu$: $$Gamma(\alpha_1 + 1/2, \hspace{1mm} \lambda_1(\mu^{(i+1)} - \mu_1)^2/2 + \beta_1 )$$.
+4. Replace $i$ by $i+1$ and return to step 2.
+
+
+This is an example Markov Chain with 100 iterations.  We initialize with $\tau^{(1)}=1$.
+
+```{r}
+tau_i = 1
+for (i in 1:100){
+  # Step 2.                            using tau^(i)
+  mu_ii = rnorm(1, mean=mu_1, sd=(lambda_1* tau_i )^(-1))
+  # Step 3.                                                using mu^(i+1)
+  tau_ii = rgamma(1, shape=alpha_1 + 0.5, rate=beta_1 + lambda_1*((mu_ii - mu_1)^2) / 2)
+  # Step 4. Replace i by i+1... which means tau^(i) becomes tau^(i+1)
+  tau_i = tau_ii
+}
+```
+
+### Gibbs Sampling Function 
+
+For the actual sampling, we first define a function to do the sampling. 
+
+```{r}
+sampleGibbs = function(start.mu, start.tau, n.sims){
+  # create empty matrix, allocate memory for efficiency 
+  pairs = matrix(NA, nrow = n.sims, ncol = 2)
+  colnames(pairs) = c("mu", "tau")
+  pairs[1,] <- c(start.mu, start.tau) 
+  # sample the values
+  for (i in 2:n.sims){
+    # start with tau  this time                                         
+    pairs[i,2] = rgamma(1, shape=alpha_1 + 0.5, rate=beta_1 + 
+                          lambda_1*((pairs[i-1,1] - mu_1)^2) / 2)
+    # mu                                         # tau
+    pairs[i,1] = rnorm(1, mean=mu_1, sd=(lambda_1* pairs[i,2] )^(-1))
+
+  }
+return(pairs) 
+}
+```
+
+### Determining Convergence
+
+Here $k=5$ separate Markov Chains to establish convergence and also to calculate the variance of our estimators.
+We choose the following initial values for $\mu$: 0.4, 1, 1.4, 1.8, 2.2.
+
+```{r}
+# number of simulations & number of Indep. Markov Chains
+m = 50;  k=5  
+M1 = sampleGibbs(start.mu = 0.4, start.tau = 1, n.sims=m)
+M2 = sampleGibbs(start.mu = 1.0, start.tau = 1, n.sims=m)
+M3 = sampleGibbs(start.mu = 1.4, start.tau = 1, n.sims=m)
+M4 = sampleGibbs(start.mu = 1.8, start.tau = 1, n.sims=m)
+M5 = sampleGibbs(start.mu = 2.2, start.tau = 1, n.sims=m)
+M_list = list(M1, M2, M3, M4, M5) # store in one list.
+```
+
+We follow the methods mentioned in Bayesian Data Analysis (Gelman et al.) to establish convergence. 
+
+Before we do anything, we put all the values of $\mu$ from the 5 simulations in a matrix. 
+The jth column of `mu_matrix` has the simulated values from the jth Markov Chain. 
+```{r}
+mu_matrix = matrix(NA, nrow = m, ncol=k)
+tau_matrix = matrix(NA, nrow = m, ncol=k)
+for (j in 1:k){
+  mu_matrix[, j]=M_list[[j]][, "mu"]
+  tau_matrix[, j]=M_list[[j]][, "tau"]
+}
+mu_matrix %>% head()
+```
+
+Here we program a function to calculate $B$, the between sequence variances. 
+
+```{r}
+calcB = function(matrix){
+  sum1 = 0
+  for (j in 1:k){
+    mean_j = mean(matrix[, j])
+                # this is the RSS of the overall mean
+    sum1 = sum1 + (mean_j-mean(matrix))^2
+  }
+  return((m/(k-1))*sum1)
+}
+```
+
+Here we program a function to calculate $W$, the within sequence variances. 
+
+```{r}
+calcW = function(matrix){
+  sum2 = 0
+  # for each markov chain
+  for (j in 1:k){
+    mean_j = mean(matrix[, j])
+    # for all values in all simulations (m total)
+    for(i in 1:m){
+      # calculate the RSS of the mean in each simulation 
+      sum2 = sum2 + (matrix[i, j] - mean_j)^2
+    }
+  }
+  return(sum2 / (k*(m-1)))
+}
+```
+
+Following, we can estimate the marginal posterior variance of each simulated estimator $\psi$. 
+
+$$\widehat{var}^+(\psi | y)= \frac{m-1}{m}W + \frac{1}{m}B.$$
+And then calculate 
+
+$$\widehat R  = \sqrt{\frac{\widehat{var}^+(\psi | y)}{W}}.$$
+This should reduce to 1 as $n \to \infty$. 
+
+```{r}
+# calculations for mu 
+B.mu = calcB(mu_matrix)
+W.mu = calcW(mu_matrix)
+
+R.mu = sqrt((((m-1)/m)*W.mu + (1/m)*B.mu)/W.mu)
+
+# calculations for tau 
+B.tau = calcB(tau_matrix)
+W.tau = calcW(tau_matrix)
+
+R.tau = sqrt((((m-1)/m)*W.tau + (1/m)*B.tau)/W.tau)
+```
+
+The authors state that they assume convergence is satisfied when $\widehat R < 1.1$.  
+
+```{r}
+R.tau
+R.mu
+```
+
+We see here that at $m=50$ we are well below the threshold and can assume that the five 
+markov chains converged.  
+
+
+## Estimating Posterior Mean of an Arbitrary Function of the parameters 
+Instruction: Simulate 10,000 pairs of $(\mu, \tau)$ parameters.
+
+```{r}
+no.sims = 2000 
+# relabel and save the burn-in chains
+m.1 = M1; m.2 = M2; m.3=M3; m.4=M4; m.5=M5
+
+M1 = sampleGibbs(start.mu = m.1[m,1], start.tau = m.1[m,2], n.sims=no.sims)
+M2 = sampleGibbs(start.mu = m.2[m,1], start.tau = m.2[m,2], n.sims=no.sims)
+M3 = sampleGibbs(start.mu = m.3[m,1], start.tau = m.3[m,2], n.sims=no.sims)
+M4 = sampleGibbs(start.mu = m.4[m,1], start.tau = m.4[m,2], n.sims=no.sims)
+M5 = sampleGibbs(start.mu = m.5[m,1], start.tau = m.5[m,2], n.sims=no.sims)
+M_list = list(M1, M2, M3, M4, M5)
+```
+
+Here are all the values from each of the simulations. 
+
+```{r}
+mu =  M_list %>% lapply(function(Mi){Mi[,"mu"]}) %>% unlist()
+tau = M_list %>% lapply(function(Mi){Mi[,"tau"]}) %>% unlist()
+pairs = data.frame(mu, tau)
+```
+
+
+Q: Estimate the posterior mean of $(\sqrt{\tau}\mu)^{-1}$, and compute the simulation standard error of the estimator. 
+
+There are $k=5$ Markov chains. We can compute the estimator of the simulation variance of our estimators. First we calculate functions to do this.
+
+```{r}
+# function to calculate the statistic
+est_calc = function(Mi){
+  stat = (sqrt(Mi[ , "tau"])*Mi[ , "mu"])^(-1)
+  return (mean(stat))
+  }
+
+simulation_se = function(list_M){
+  k = length(list_M)
+  estimators = lapply(list_M, est_calc) %>% unlist()
+  # calculate S
+  S = sum((estimators - mean(estimators))^2)/k
+  S = S %>% sqrt()
+  SE = S / sqrt(k)
+  return(SE)
+}
+```
+
+So we have $W= (\sqrt{\tau}\mu)^{-1}$.  The average value of our 10,000 simulation is 
+
+```{r}
+(sqrt(pairs$tau)*pairs$mu)^(-1) %>% mean()
+```
+
+The standard error is:
+
+```{r}
+simulation_se(M_list)
+```
+
+
+
+The simulated values of $W$ along with the mean (blue line) is displayed below. 
+
+
+```{r}
+pairs = pairs %>% data.frame() %>% mutate(W = 1/(sqrt(tau)*mu)) 
+
+q = pairs %>% ggplot(aes(x=W)) + geom_histogram(alpha=0.9, bins=100) + theme_minimal() 
+q + xlab(expression((sqrt(tau) * mu)^(-1))) + 
+        geom_vline(aes(xintercept=mean(W)), color="blue") 
+```

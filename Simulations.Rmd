@@ -1,0 +1,181 @@
+---
+title: "Simulations - Overview"
+author: "Sho"
+date: "10/1/2021"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+## Overview
+These are exercises from Chapter 12.2 (Why is Simulation Useful?) in Probability & Statistics by DeGroot & Schervish. 
+I did the exercises in this chapter as a warmup to learning MCMC in Ch12. 5. 
+
+## Exercise 12.4
+
+Use a pseudo-random number generator to simulate a sample of 15 independent observations in which 13 of the 15 are drawn from the uniform distribution on the interval [−1, 1] and the other two are drawn from the uniform distribution on the interval [−10, 10].
+
+
+```{r cars}
+set.seed(10)
+sample = c(runif(n=13, min=-1, max=1), runif(n=2, min=-10, max=10))
+sample
+```
+
+
+For the 15 values that are obtained, calculate the values of (a) the sample mean, 
+
+```{r}
+#a: Sample mean
+mean(sample) 
+```
+
+(b) the trimmed means for k = 1, 2, 3, and 4 (see Sec. 10.7), 
+```{r}
+trimmed_mean = function(data, k){
+  order_stat = sort(data)
+  n=length(data)
+  trimmed_data=order_stat[(k+1):(n-k)]
+  return(mean(trimmed_data))
+}
+# test - should both result 1 
+trimmed_mean(c(0, 0, 1, 1, 2, 2), k=2)
+trimmed_mean(c(0, 0, 1, 1, 1, 2, 2), k=2)
+```
+
+```{r}
+for(i in 1:4){
+  trimmed_mean(sample, k=i) %>% print()
+}
+```
+
+As long as you trim the largest & smallest values, further trimming doesn't seem to make a difference. 
+
+(c) the sample median. Which of these estimators is closest to 0?
+
+```{r}
+median(sample)
+```
+
+Median is closest to 0. 
+
+##Exercise: 12.5 
+
+Repeat Exercise 4 ten times, using a different pseudo- random sample each time. In other words, construct 10 independent samples, each of which contains 15 observations and each of which satisfies the conditions of Exercise 4
+
+
+```{r}
+set.seed(199)
+
+# sample: row (10)
+# number of observations per sample: column (15)
+samples = matrix(nrow = 10, ncol = 15)
+for (k in 1:10){
+  samples[k, ] = c(runif(n=13, min=-1, max=1), runif(n=2, min=-10, max=10))
+}
+
+samples %>% as.data.frame()
+```
+
+For each sample, which of the estimators listed in Exercise 4 is closest to 0?
+
+
+```{r}
+
+t_1 = function(x) 
+t_1 = function(x) trimmed_mean(data=x, k=1)
+  
+means = apply(samples, MARGIN=1, FUN=mean)
+medians = apply(samples, MARGIN=1, FUN=median)
+trimmed_1 = apply(samples, MARGIN=1, FUN=trimmed_mean, k=1)
+trimmed_2 = apply(samples, MARGIN=1, FUN=trimmed_mean, k=2)
+trimmed_3 = apply(samples, MARGIN=1, FUN=trimmed_mean, k=3)
+trimmed_4 = apply(samples, MARGIN=1, FUN=trimmed_mean, k=4)
+
+estimator_results = data.frame(sample_num=1:10, means, medians, 
+                               trimmed_1, trimmed_2, trimmed_3, trimmed_4) %>% 
+  round(4) 
+
+estimator_results
+```
+```{r}
+min_abs = function(x) min(abs(x))
+
+estimator_results %>% apply(MARGIN=1, min_abs)
+```
+
+So for each sample the estimator closest to zero are... 
+
+1. Trimmed mean (k=4)
+2. Trimmed mean (k=2),
+3. Trimmed mean (k=2), 
+4. Trimmed mean (k=4)
+5. Median
+6. Trimmed mean (k=1)
+7. Trimmed mean (k=1)
+8. Median
+9. Trimmed mean (k=1)
+10. Median
+
+
+(b): For each of the estimators in Ex 4, determine the square of the distance between the estimator and 0 in each of the 10 samples, and determine the average of these 10 squared distances. For which of the estimators is this average squared distance from 0 smallest?
+
+
+```{r}
+squared_error = function(x){
+  return (x^2)
+}
+
+temp = apply(estimator_results %>% select(-sample_num), MARGIN = 1, FUN=squared_error)
+result_mse = apply(temp, MARGIN = 1, FUN=mean)
+result_mse
+```
+
+
+Trimmed Mean with k=2 has the lowest MSE. 
+
+##Exercise: 12.7 & 12.8
+
+The objective here is to simulate the median of a contaminated normal distribution. 
+
+$$f_X(x)= (1-\epsilon) (2 \pi \sigma)^{-1/2} exp(-\frac{1}{2 \sigma^2} (x-\mu)^2) + \epsilon g(x)$$
+We are using the standard normal distribution ($Z$) and the contaminating distribution $Y \sim N(0, 100)$ has a pdf $g(x)$. 
+Note $\epsilon = 0.05$.  We sample 1000 times to find the median of $X$. 
+
+```{r fig.height=3, fig.width=5}
+iteration = 10000
+
+sample_medians = rep(NA, iteration)
+for (i in 1:iteration){
+  Z = rnorm(n=20, mean=0, sd=1)
+  Y = rnorm(n=20, mean=0, sd=sqrt(100))
+  ep = 0.05
+
+  X_sample = Z*(1-ep)+Y*ep
+  sample_medians[i] = median(X_sample)
+}
+
+
+sample_medians %>% hist(main="Histogram of Sample Medians")
+```
+
+
+Now we compute the MSE. We know that the squared error in this case is...
+
+$(\text{theoretical median} - \text{sample_median})^2 =(0 - \text{sample_median})^2 = (\text{sample_median})^2$. 
+
+Thus we take the mean of the squared sample medians to get the result. 
+
+```{r}
+mse = mean(sample_medians^2)
+```
+
+To match the results in Table 10.40 we have to multiply by 20.
+
+```{r}
+mse * 20 
+```
+ which is fairly close to the 1.62 in the book. 
